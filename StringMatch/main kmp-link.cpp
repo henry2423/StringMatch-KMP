@@ -10,9 +10,75 @@
 #include <fstream>
 #include <sys/time.h>
 
-// 程式架構 -> 先把一行的pattern讀入 然後再跟所有的text進行比對 接著再控制text的指標回到開頭 然後接著讀入下一行pattern 再跟所有text進行比對
-
 using namespace std;
+
+class success_set //比對成功的紀錄
+{
+public:
+    friend class success_set_chain;
+    success_set()
+    {
+        
+    }
+    success_set(int line, int pos, char *pat, char *text, success_set *next=0)
+    {
+        this->line = line;
+        this->pos = pos;
+        for(int i=0; pat[i]!='\0'; i++)
+        {
+            this->pat[i] = pat[i];
+        }
+        for(int i=0; text[i]!='\0'; i++)
+        {
+            this->text[i] = text[i];
+        }
+        this->link = next;
+    }
+    friend ostream& operator<< (ostream& os, success_set *a);     //最後結果輸出用此
+    
+private:
+    int line;   //第幾行
+    int pos;    //第幾個字
+    char pat[2000];     //keywords
+    char text[2000];    //serach words
+    
+public:
+    success_set *link;
+};
+
+
+ostream& operator<< (ostream& os, success_set *a)
+{
+    if(a!=NULL)
+    {
+        while(a)
+        {
+            os << a->line << " " << a->pos << " " << "\"";
+            for(int i=0; a->pat[i]!='\0'; i++)
+            {
+                os << a->pat[i];
+            }
+            os << "\"" << " " << "\"";
+            
+            for(int i=0; a->text[i]!='\0'; i++)
+            {
+                os << a->text[i];
+            }
+            os << "\"" << endl;
+            a = a->link;
+        }
+    }
+    else
+    {
+        os << "No match string in this test." << endl;
+    }
+    
+    
+    return os;
+}
+
+
+
 
 int main(int argc, const char * argv[]) {
     
@@ -23,10 +89,12 @@ int main(int argc, const char * argv[]) {
     
     char text[2000] = {0};    //text = search words
     char pat[2000] = {0};    //pat = keywords
+    success_set *first = NULL;           //link-list first
+    success_set *current = first;         //link-list control
     int line = 1;   //第幾行
     int sizeof_pat = 0;     //運算patter的長度
     int sizeof_text = 0;    //運算text的長度
-    bool has_result = 0;    //紀錄是否有匹配成功
+    
     int failure[2000] = {0};      //failure function
     
     
@@ -36,12 +104,12 @@ int main(int argc, const char * argv[]) {
         return 1;
     }
     
-    fstream pat_file;      //fstream 讀入pattern file
-    fstream text_file;     //fstream 讀入text file
+    fstream pat_file;
+    fstream text_file;
     pat_file.open(argv[1],ios::in);
     text_file.open(argv[2],ios::in);
     
-    //確定有讀到檔案 沒有的話就跳出程式
+    //確定有讀到檔案
     if(!pat_file)
     {
         cout<<"Can't open the file"<<endl;
@@ -54,25 +122,25 @@ int main(int argc, const char * argv[]) {
     }
     
     
-    //先從第一個pat開始search 把所有組text搜完再換下一組pat
+    //先從第一個pat開始search 把所以組text搜完再換下一組pat
     while(!pat_file.eof())
     {
-        pat_file.getline(pat, sizeof(pat));    //取得一行的pat
+        pat_file.getline(pat, sizeof(pat));
         for(int i=0; pat[i]!='\0'; i++) //計算pat的長度
         {
             sizeof_pat = i+1;
         }
         
-        //實做failure Function
+        //做failure Function
         int j=0; //neddle to make search
         for(int i=1; i<sizeof_pat; i++)
         {
             //Fail
             while( pat[i]!=pat[j] )
             {
-                if(j!=0)    //退找下一個Failure
+                if(j!=0)
                     j = failure[j-1];
-                else        //當Failure退無可退的時候就是0 跳出while
+                else    //退找下一個Failure
                 {
                     failure[j] = 0;
                     break;
@@ -82,25 +150,23 @@ int main(int argc, const char * argv[]) {
             //Success
             if( pat[i]==pat[j] )
             {
-                failure[i] = j+1;   //設定failure j+1
-                j = failure[i];     //然後設定j準備看下一個pat的字母是否能比對成功
+                failure[i] = j+1;
+                j = failure[i];
             }
             
             
         }
         
-        /*  看 Failure function 的數字
+        /*
          for(int i=0;i<sizeof_pat;i++)
          {
-         cout << failure[i] << " ";
+         cout << failure[i]<<endl;
          }
-         cout<<endl;
          */
         
-        //開始讀text的文字
         while(!text_file.eof())
         {
-            text_file.getline(text, sizeof(text)); //取得一行的text
+            text_file.getline(text, sizeof(text));
             for(int i=0; text[i]!='\0'; i++) //計算text的長度
             {
                 sizeof_text = i+1;
@@ -118,7 +184,7 @@ int main(int argc, const char * argv[]) {
                 {
                     if(neddle!=0)    //尋找比對失敗的上一個字元的Failure function
                         neddle = failure[neddle-1];
-                    else            //直接跳下一個字母比對
+                    else
                     {
                         index++;
                     }
@@ -128,64 +194,58 @@ int main(int argc, const char * argv[]) {
                 //Success (Full examine complete)
                 if( neddle == sizeof_pat-1)
                 {
-                    has_result = 1;     //一個flag代表有結果了
-                    
-                    //輸出結果
-                    printf("%d %d \"",line,index-neddle+1);
-                    for(int i=0; i<sizeof_pat; i++)
+                    if(!first)  //沒有first先放進去
                     {
-                        printf("%c",pat[i]);
+                        first = new success_set(line, index-neddle+1, pat, text);
+                        current = first;
                     }
-                    printf("\" \"");
-                    
-                    for(int i=0; i<sizeof_text; i++)
+                    else
                     {
-                        printf("%c",text[i]);
+                        current->link = new success_set(line, index-neddle+1, pat, text); //從current直接插入
+                        current = current->link;
                     }
-                    printf("\"\n");
                     
                     
-                    //Success之後不能直接全部跳鍋 說不定小距離移動之後還是有比對成功的可能 所以要再看failure function
                     if(neddle == 0)   //如果字串移動的距離=0 就直接強制移動
                         index++;
+                    else if ( neddle == failure[neddle] )
+                        neddle = 0;
                     else
                         neddle = failure[neddle-1];
                     continue;
                 }
                 
-                //一個字母比對成功 繼續檢查下一個字元是否相同
+                //繼續檢查下一個字元是否相同
                 index++;
                 neddle++;
             }
             
             
-            line++;     //換text的下一行跟此pat做比對
+            line++;
         }
         
         
         text_file.clear();  // 重置 eof
         text_file.seekg(0);  // get 指標移至檔案首
-        line = 1;      //因為換新的pat 需要重新讀text檔所以把line再設定成1
+        line = 1;
     }
     
-    //關閉檔案
+    
+    
+    
+    cout << first;
+    
     pat_file.close();
     text_file.close();
     
-    //如果都比對不到的話就輸出這行
-    if(!has_result)
-        printf("No match string in this test. \n");
     
-    //時間計算
+    
     struct timeval t_val_end;
     gettimeofday(&t_val_end, NULL);
     struct timeval t_result;
-    timersub(&t_val_end, &t_val, &t_result);    //開始跟結束時間相減
-    double consume = t_result.tv_sec*1000 + (1.0 * t_result.tv_usec)/1000;  //換算成毫秒
+    timersub(&t_val_end, &t_val, &t_result);
+    double consume = t_result.tv_sec*1000 + (1.0 * t_result.tv_usec)/1000;
     printf("%f ms \n", consume);
-    
-    
-    
     
     return 0;
 }
